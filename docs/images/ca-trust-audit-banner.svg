@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="380" viewBox="0 0 1280 380" role="img" aria-labelledby="title description">
+  <title id="title">ca-trust-audit — independent trust decisions</title>
+  <desc id="description">A restrained technical diagram: the same compromised certificate authority is rejected by a host but accepted by a container. Each trust store needs its own audit. Results shown are illustrative.</desc>
+  <rect width="1280" height="380" fill="#fafaf9"/>
+  <path d="M56 42H1224M56 338H1224M591 74V306" fill="none" stroke="#d6d3d1"/>
+
+  <g font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace">
+    <text x="56" y="80" fill="#57534e" font-size="12" letter-spacing="1.3">CERTIFICATE TRUST / LINUX + DOCKER</text>
+    <text x="52" y="155" fill="#1c1917" font-size="52" font-weight="700" letter-spacing="-2.6">ca-trust-audit</text>
+    <g fill="#44403c" font-size="18">
+      <text x="56" y="205">One host.</text>
+      <text x="56" y="233">Multiple trust stores.</text>
+    </g>
+    <path d="M56 277H83" stroke="#b45309" stroke-width="3"/>
+    <text x="95" y="281" fill="#57534e" font-size="12">CVE-2026-111943 / eMudhra</text>
+
+    <text x="641" y="142" fill="#92400e" font-size="10" letter-spacing=".8">COMPROMISED</text>
+    <rect x="641" y="153" width="80" height="76" fill="#fffbeb" stroke="#b45309"/>
+    <text x="681" y="187" fill="#1c1917" font-size="24" font-weight="700" text-anchor="middle">CA</text>
+    <text x="681" y="209" fill="#78716c" font-size="10" text-anchor="middle" letter-spacing="2">KEY</text>
+
+    <path d="M721 191H767V113H813M767 191V269H862" fill="none" stroke="#78716c" stroke-width="1.5"/>
+    <circle cx="767" cy="191" r="3" fill="#78716c"/>
+    <path d="M817 106L831 120M831 106L817 120" stroke="#047857" stroke-width="2"/>
+    <path d="M838 113H862" stroke="#047857" stroke-width="1.5" stroke-dasharray="2 4"/>
+    <path d="M851 263L862 269L851 275" fill="none" stroke="#b91c1c" stroke-width="1.5"/>
+
+    <rect x="866" y="73" width="333" height="82" fill="#fff" stroke="#d6d3d1"/>
+    <path d="M866 73V155" stroke="#047857" stroke-width="4"/>
+    <text x="886" y="97" fill="#57534e" font-size="11" letter-spacing="1">HOST</text>
+    <text x="886" y="130" fill="#047857" font-size="22" font-weight="700">PASSED</text>
+    <text x="999" y="129" fill="#57534e" font-size="12">chain rejected</text>
+
+    <rect x="866" y="229" width="333" height="82" fill="#fff" stroke="#d6d3d1"/>
+    <path d="M866 229V311" stroke="#b91c1c" stroke-width="4"/>
+    <text x="886" y="253" fill="#57534e" font-size="11" letter-spacing="1">CONTAINER</text>
+    <text x="886" y="286" fill="#b91c1c" font-size="22" font-weight="700">PROBLEM</text>
+    <text x="1009" y="285" fill="#57534e" font-size="12">chain accepted</text>
+
+    <text x="56" y="362" fill="#78716c" font-size="10" letter-spacing=".4">READ-ONLY AUDITING</text>
+    <text x="1224" y="362" fill="#78716c" font-size="10" text-anchor="end">Illustrative results · evaluate every target independently</text>
+  </g>
+</svg>
