@@ -82,6 +82,7 @@ warning. No Docker socket access is needed for host-only scanning.
 ```sh
 ca-trust-audit                                 # host + all running Docker containers
 ca-trust-audit --host-only
+ca-trust-audit --host                           # alias for --host-only
 ca-trust-audit --containers-only
 ca-trust-audit --container webapp               # exact name or unique ID prefix
 ca-trust-audit --offline                        # no live endpoint requests
@@ -98,7 +99,7 @@ ca-trust-audit --version
 
 Existing JSON files are never overwritten. Scan mode accepts no positional arguments;
 `self-update` is a separate command and does not run a scan.
-`--host-only` conflicts with `--containers-only` and `--container`.
+`--host-only` (alias `--host`) conflicts with `--containers-only` and `--container`.
 `--container` selects only that container and must match one running container.
 Additional CA paths apply **inside each selected target**; they are not host bind
 mount instructions. Directory traversal examines `.crt`, `.pem` and `.0` entries
@@ -106,8 +107,11 @@ in explicitly designated trust directories, not unrelated application files.
 
 `--timeout` is a per-operation deadline (default 10 seconds, range 1ms–5m), not a
 whole-scan budget. Built-in runtime requests also impose a ten-second network
-limit. `--workers` bounds concurrent **container targets** (default 4, range
-1–64); chains and clients within a target are sequential. Signals propagate
+limit. `--workers` bounds concurrent **container targets**. Its default is the
+available logical CPU count (`runtime.NumCPU()`, the Go equivalent of `nproc`,
+including CPU affinity); no external `nproc` command is required. An explicit
+positive integer overrides it. The actual worker count is also capped by the
+number of selected containers; chains and clients within a target are sequential. Signals propagate
 cancellation; canceled scans return exit 2. Library callers can set an overall
 context deadline. On a remote Docker daemon, canceled exec attachment may leave
 the narrowly scoped client running until its own timeout; the scanner never kills
@@ -144,17 +148,26 @@ readable without color. `--color auto|always|never` defaults to `auto`: redirect
 output, `TERM=dumb`, and a nonempty `NO_COLOR` disable automatic colors. `always`
 explicitly overrides detection. JSON never contains presentation escape sequences.
 
-Progress appears on **stderr** in interactive terminals. It shows the active
-target/client or CA-file stage, elapsed time, and targets processed. The target
+Progress appears on **stderr** in interactive terminals. It shows targets
+processed, elapsed time, an approximate ETA, the active stage/client, and the
+target **at the end**. The target
 total becomes known after Docker discovery; this is a work counter, not a count
 of passed security checks. A heartbeat updates elapsed time during slow requests.
+Interactive redraws are capped at four per second across all workers and phases;
+long labels are shortened to fit the terminal width without wrapping. Narrow
+terminals use a compact counter/time layout, with the target kept at the end.
+ETA uses completed container durations, active-target elapsed time, queued targets
+and the configured worker count. It shows `estimating` until comparable samples
+exist, including host-only scans, or when a much slower target invalidates the
+estimate. Containers can differ substantially; ETA is a scheduling estimate,
+not a deadline or a security result. Interrupted scans show ETA `n/a`.
 `--progress auto|always|never` defaults to `auto`. Use `always` for plain stage logs
 in CI or `never` for silent progress. Redirected output has no progress by default.
 `--json -` keeps stdout exclusively JSON, even with progress explicitly enabled.
 
 ```text
-[progress] container webapp: HTTPS positive control for PHP cURL | 1/4 targets processed | elapsed 8s
-[progress] Scan finished | 4/4 targets processed | elapsed 21s
+[progress] 2/4 targets processed | elapsed    18s | ETA       ~12s | checking PHP cURL | container webapp
+[progress] 4/4 targets processed | elapsed    30s | ETA         0s | Scan finished
 ```
 
 ## Evidence and threat model
@@ -336,7 +349,7 @@ r, err := audit.Scan(ctx, audit.Options{
     IncludeContainers: true,
     Online: true,
     Timeout: 10*time.Second,
-    Workers: 4,
+    // Workers: runtime.NumCPU() by default; set a positive value to override.
 })
 if err != nil { /* fatal error; r may contain partial results */ }
 code := r.ExitCode(true)

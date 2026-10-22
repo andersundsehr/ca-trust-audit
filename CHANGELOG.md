@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.2.1
+
+- Default container workers to the available logical CPU count (`nproc` equivalent)
+  in both the CLI and Go API; keep explicit positive `--workers` overrides.
+- Add `--host` as an alias for `--host-only`, with the same selection conflicts.
+- Stabilize parallel scan progress: counters/times first, target last, a shared
+  four-per-second redraw limit, terminal-width fitting and an estimated time to
+  finish based on completed container timings and worker concurrency.
+
 ## v0.2.0
 
 - Add terminal progress with elapsed time, target counts and per-client stages.

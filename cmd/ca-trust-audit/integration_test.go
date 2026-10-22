@@ -173,7 +173,7 @@ func TestPHP85CLI(t *testing.T) {
 	})
 	t.Run("JSON remains clean with forced colors and progress", func(t *testing.T) {
 		out, errout, code := invoke(t, "--container", name, "--offline", "--json", "-", "--color", "always", "--progress", "always")
-		if code != 0 || !bytes.Contains(errout, []byte("Scan finished | 1/1 targets processed")) || bytes.Contains(errout, []byte("\x1b")) || bytes.Contains(out, []byte("\x1b")) {
+		if code != 0 || !bytes.Contains(errout, []byte("1/1 targets processed")) || !bytes.Contains(errout, []byte("Scan finished")) || !bytes.Contains(errout, []byte("ETA")) || bytes.Contains(errout, []byte("\x1b")) || bytes.Contains(out, []byte("\x1b")) {
 			t.Fatalf("presentation corrupted stream separation: exit=%d stderr=%q", code, errout)
 		}
 		checkReport(t, out)

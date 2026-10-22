@@ -31,7 +31,7 @@ jobs:
         run: |
           dist/ca-trust-audit-linux-amd64 --version
           scan_status=0
-          dist/ca-trust-audit-linux-amd64 --host-only --offline --json report.json || scan_status=$?
+          dist/ca-trust-audit-linux-amd64 --host --offline --json report.json || scan_status=$?
           # A vulnerable runner bundle is a valid scanner result, not a broken build.
           test "$scan_status" -eq 0 || test "$scan_status" -eq 1
           test -s report.json

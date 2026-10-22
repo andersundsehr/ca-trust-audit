@@ -12,6 +12,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -41,7 +42,7 @@ type Options struct {
 	ContainersOnly    bool
 	Container         string
 	Timeout           time.Duration
-	Workers           int
+	Workers           int      // maximum concurrent container scans; zero uses runtime.NumCPU()
 	CAPaths           []string // additional exact PEM files, evaluated in each selected target
 	Incident          *certificates.Incident
 	Probes            []probes.Probe // nil uses built-ins; empty disables external probes
@@ -65,10 +66,10 @@ func normalize(o *Options) error {
 		return errors.New("timeout must be between 1ms and 5m")
 	}
 	if o.Workers == 0 {
-		o.Workers = 4
+		o.Workers = runtime.NumCPU()
 	}
-	if o.Workers < 1 || o.Workers > 64 {
-		return errors.New("workers must be between 1 and 64")
+	if o.Workers < 1 {
+		return errors.New("workers must be at least 1")
 	}
 	if o.PositiveControl == "" {
 		o.PositiveControl = "https://example.com/"

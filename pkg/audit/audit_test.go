@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -136,6 +137,15 @@ func TestOptions(t *testing.T) {
 	for _, o := range []Options{{Workers: -1}, {Timeout: -time.Second}, {HostOnly: true, ContainersOnly: true}, {PositiveControl: "http://insecure.invalid"}, {CAPaths: []string{"relative"}}} {
 		if normalize(&o) == nil {
 			t.Fatal("invalid options accepted", o)
+		}
+	}
+}
+
+func TestWorkerDefaultsAndOverrides(t *testing.T) {
+	for _, tc := range []struct{ requested, want int }{{0, runtime.NumCPU()}, {1, 1}, {4, 4}, {128, 128}} {
+		o := Options{Workers: tc.requested}
+		if err := normalize(&o); err != nil || o.Workers != tc.want {
+			t.Fatalf("workers=%d: got %d, want %d: %v", tc.requested, o.Workers, tc.want, err)
 		}
 	}
 }
