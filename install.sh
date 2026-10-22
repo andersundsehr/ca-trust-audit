@@ -57,7 +57,7 @@ work_dir=$(mktemp -d "${TMPDIR:-/tmp}/ca-trust-audit-install.XXXXXX")
 
 # Resolve latest once so the binary and checksum always come from the same tag.
 if [ "$version" = latest ]; then
-    resolved=$(curl --proto '=https' --proto-redir '=https' --tlsv1.2 --fail --silent --show-error \
+    resolved=$(curl -q --proto '=https' --proto-redir '=https' --tlsv1.2 --fail --silent --show-error \
         --location --head --connect-timeout 15 --max-time 60 --output /dev/null \
         --write-out '%{url_effective}' "$repository/releases/latest") || fail 'cannot resolve latest release'
     case "$resolved" in
@@ -70,7 +70,7 @@ case "$version" in *[!A-Za-z0-9.+-]*) fail 'invalid release version' ;; esac
 asset=ca-trust-audit-linux-$arch
 base=$repository/releases/download/$version
 fetch() {
-    curl --proto '=https' --proto-redir '=https' --tlsv1.2 --fail --silent --show-error \
+    curl -q --proto '=https' --proto-redir '=https' --tlsv1.2 --fail --silent --show-error \
         --location --retry 2 --connect-timeout 15 --max-time 180 --max-filesize "$3" \
         --output "$2" "$1" || fail "could not download $version release asset; check that the release is published"
 }

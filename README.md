@@ -23,7 +23,7 @@ is **NOT_SUPPORTED**, and TLS rejection never establishes code-signing safety.
 Install the latest release with one command (Linux and WSL):
 
 ```sh
-curl -fsSL https://github.com/andersundsehr/ca-trust-audit/releases/latest/download/install.sh | sh
+curl -qfsSL https://github.com/andersundsehr/ca-trust-audit/releases/latest/download/install.sh | sh
 ```
 
 The installer automatically detects AMD64 (`x86_64`) or ARM64 (`aarch64`/`arm64`),
@@ -39,8 +39,8 @@ scanner needs none of the download/build tools. A non-root installation without
 sudo, or a specific release, can also be selected in a single command:
 
 ```sh
-curl -fsSL https://github.com/andersundsehr/ca-trust-audit/releases/latest/download/install.sh | sh -s -- --install-dir "$HOME/.local/bin"
-curl -fsSL https://github.com/andersundsehr/ca-trust-audit/releases/latest/download/install.sh | sh -s -- --version v0.1.0
+curl -qfsSL https://github.com/andersundsehr/ca-trust-audit/releases/latest/download/install.sh | sh -s -- --install-dir "$HOME/.local/bin"
+curl -qfsSL https://github.com/andersundsehr/ca-trust-audit/releases/latest/download/install.sh | sh -s -- --version v0.1.0
 ```
 
 For a user-local installation, `$HOME/.local/bin` must be on `PATH`; otherwise the
