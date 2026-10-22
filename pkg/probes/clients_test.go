@@ -141,6 +141,13 @@ func TestInstalledRuntimeTLS(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
 			runner := HostRunner{}
+			// PHP's libcurl extension does not consume the curl executable's
+			// CURL_CA_BUNDLE environment setting. Configure the same public test
+			// CA through CLI ini settings for these ephemeral fixture processes.
+			if script, ok := p.(Script); ok && script.Executable == "php" {
+				script.Prefix = []string{"-d", "openssl.cafile=" + bundle, "-d", "curl.cainfo=" + bundle, "-r"}
+				p = script
+			}
 			if !p.Discover(ctx, runner) {
 				t.Skip("optional runtime/module not installed")
 			}

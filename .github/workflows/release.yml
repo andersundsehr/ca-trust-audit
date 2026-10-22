@@ -40,8 +40,9 @@ jobs:
               -ldflags="-s -w -buildid= -X main.version=$RELEASE_TAG -X main.commit=$GITHUB_SHA -X main.buildDate=$build_date" \
               -o "dist/ca-trust-audit-linux-$arch" ./cmd/ca-trust-audit
           done
+          cp install.sh dist/install.sh
           cd dist
-          sha256sum ca-trust-audit-linux-* > checksums.txt
+          sha256sum ca-trust-audit-linux-* install.sh > checksums.txt
       - uses: actions/upload-artifact@v4
         with:
           name: release-files

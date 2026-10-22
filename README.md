@@ -20,18 +20,34 @@ is **NOT_SUPPORTED**, and TLS rejection never establishes code-signing safety.
 
 ## Install
 
-Download `ca-trust-audit-linux-amd64` or `ca-trust-audit-linux-arm64`, and
-`checksums.txt`, from this repository's [GitHub Releases](https://github.com/andersundsehr/ca-trust-audit/releases).
-Releases are created automatically when a maintainer pushes a version tag such as
-`v0.1.0`; adding the workflow does not itself publish a release.
+Install the latest release with one command (Linux and WSL):
 
 ```sh
-# After downloading the executable and checksums.txt:
-sha256sum --ignore-missing -c checksums.txt
-chmod +x ca-trust-audit-linux-amd64
-./ca-trust-audit-linux-amd64 --version
-./ca-trust-audit-linux-amd64
+curl -fsSL https://github.com/andersundsehr/ca-trust-audit/releases/latest/download/install.sh | sh
 ```
+
+The installer automatically detects AMD64 (`x86_64`) or ARM64 (`aarch64`/`arm64`),
+resolves the latest published release, downloads the matching standalone binary
+and SHA-256 manifest from that **same version**, verifies the checksum, and
+installs `ca-trust-audit` to `/usr/local/bin`. It uses `sudo` only for installation
+when administrator permissions are needed; root can run it directly. Unsupported
+systems, failed downloads and checksum errors stop installation and preserve an
+existing executable. Updates replace the executable atomically.
+
+The installer needs `curl`, `sha256sum` and common POSIX utilities. The installed
+scanner needs none of the download/build tools. A non-root installation without
+sudo, or a specific release, can also be selected in a single command:
+
+```sh
+curl -fsSL https://github.com/andersundsehr/ca-trust-audit/releases/latest/download/install.sh | sh -s -- --install-dir "$HOME/.local/bin"
+curl -fsSL https://github.com/andersundsehr/ca-trust-audit/releases/latest/download/install.sh | sh -s -- --version v0.1.0
+```
+
+For a user-local installation, `$HOME/.local/bin` must be on `PATH`; otherwise the
+installer prints the executable's full path. For manual inspection/download, see
+[install.sh](install.sh) and [GitHub Releases](https://github.com/andersundsehr/ca-trust-audit/releases).
+Checksums protect release-file integrity; they are not an independent signature
+of the publisher. Downloads always use verified HTTPS.
 
 A default run scans the current local filesystem, discovers Docker, and scans each
 **running** container independently. Inside a container, the current filesystem is

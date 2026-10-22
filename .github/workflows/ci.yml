@@ -16,6 +16,8 @@ jobs:
           cache: false
       - name: Formatting
         run: test -z "$(gofmt -l cmd pkg internal)"
+      - name: Installer syntax
+        run: sh -n install.sh
       - run: go vet ./...
       - run: go test -count=1 -race -coverprofile=coverage.out ./...
       - name: Available runtime probes against local HTTPS (no public network)
