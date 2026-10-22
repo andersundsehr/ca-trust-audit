@@ -42,12 +42,13 @@ type Options struct {
 	ContainersOnly    bool
 	Container         string
 	Timeout           time.Duration
-	Workers           int      // maximum concurrent container scans; zero uses runtime.NumCPU()
+	Workers           int      // concurrent containers and global TLS-check limit; zero uses runtime.NumCPU()
 	CAPaths           []string // additional exact PEM files, evaluated in each selected target
 	Incident          *certificates.Incident
 	Probes            []probes.Probe // nil uses built-ins; empty disables external probes
 	PositiveControl   string         // defaults to https://example.com/
 	Policy            certificates.Policy
+	probeSlots        chan struct{} // shared across targets within one Scan
 }
 
 // DefaultIncident returns the verified embedded incident snapshot.
@@ -70,6 +71,9 @@ func normalize(o *Options) error {
 	}
 	if o.Workers < 1 {
 		return errors.New("workers must be at least 1")
+	}
+	if o.probeSlots == nil {
+		o.probeSlots = make(chan struct{}, o.Workers)
 	}
 	if o.PositiveControl == "" {
 		o.PositiveControl = "https://example.com/"
@@ -444,6 +448,10 @@ func scanTarget(ctx context.Context, target report.Target, files Files, runner p
 	}
 	testedClients := 0
 	for _, client := range clients {
+		if ctx.Err() != nil {
+			t.Coverage.Complete = false
+			break
+		}
 		if runner == nil {
 			break
 		}
@@ -482,25 +490,22 @@ func scanTarget(ctx context.Context, target report.Target, files Files, runner p
 			continue
 		}
 		notify(o, Progress{Phase: PhasePositiveControl, Target: target, Client: client.Name()})
-		c, cancel = context.WithTimeout(ctx, o.Timeout)
-		control := client.Check(c, runner, o.PositiveControl)
-		cancel()
+		control := checkClient(ctx, o, client, runner, o.PositiveControl)
 		if control.Status != report.VulnerableClient {
 			cv.Reason = "positive control failed: " + control.Category
 		}
+		results := checkChains(ctx, o, target, client, runner, incident.Chains, control.Status == report.VulnerableClient)
 		for chainIndex, chain := range incident.Chains {
-			if ctx.Err() != nil {
+			result := results[chainIndex]
+			if result.Status == "" {
 				t.Coverage.Complete = false
-				break
-			}
-			notify(o, Progress{Phase: PhaseTLS, Target: target, Client: client.Name(), Completed: chainIndex, Total: len(incident.Chains)})
-			result := probes.Result{Status: report.Inconclusive, Category: "positive_control_failed"}
-			if control.Status == report.VulnerableClient {
-				c, cancel = context.WithTimeout(ctx, o.Timeout)
-				result = client.Check(c, runner, "https://"+chain.Host+"/")
-				cancel()
+				continue
 			}
 			f := probes.EvidenceFor(result, chain, client.Name())
+			if result.Category == "canceled" {
+				attempted := false
+				f.Evidence.Attempted = &attempted
+			}
 			if control.Status != report.VulnerableClient {
 				f.Status = report.Inconclusive
 				f.Evidence.Category = "positive_control_failed"
@@ -515,7 +520,6 @@ func scanTarget(ctx context.Context, target report.Target, files Files, runner p
 				t.Coverage.Complete = false
 			}
 			t.Findings = append(t.Findings, f)
-			notify(o, Progress{Phase: PhaseTLS, Target: target, Client: client.Name(), Completed: chainIndex + 1, Total: len(incident.Chains)})
 		}
 		if cv.Tested == len(incident.Chains) {
 			testedClients++

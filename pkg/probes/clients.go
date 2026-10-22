@@ -28,6 +28,7 @@ type Result struct {
 
 // Probe is the extension point for additional clients. A successful TLS request
 // is not enough: accepted peers must be identified by their certificate hash.
+// Methods must support concurrent calls across targets and certificate chains.
 type Probe interface {
 	Name() string
 	Discover(context.Context, Runner) bool

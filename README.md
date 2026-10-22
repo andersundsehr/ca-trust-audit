@@ -57,7 +57,7 @@ ca-trust-audit
 
 ```sh
 curl -qfsSL https://github.com/andersundsehr/ca-trust-audit/releases/latest/download/install.sh | sh -s -- --install-dir "$HOME/.local/bin"
-curl -qfsSL https://github.com/andersundsehr/ca-trust-audit/releases/latest/download/install.sh | sh -s -- --version v0.2.1
+curl -qfsSL https://github.com/andersundsehr/ca-trust-audit/releases/latest/download/install.sh | sh -s -- --version v0.2.2
 ```
 
 Add `$HOME/.local/bin` to `PATH` for a user-local installation. See [installer details](docs/reference.md#install) or inspect [install.sh](install.sh).
@@ -69,9 +69,10 @@ Add `$HOME/.local/bin` to `PATH` for a user-local installation. See [installer d
 ```sh
 ca-trust-audit self-update --check    # check only
 ca-trust-audit self-update            # update; use sudo if the directory requires it
+ca-trust-audit self                   # short alias for self-update
 ```
 
-`selfupdate` is an alias. This explicit command replaces the executable; ordinary scans remain read-only. It selects the matching architecture, validates standalone Go/ELF metadata and installs atomically over verified HTTPS. No external tools or checksum file are required. [Update options and trust boundary](docs/reference.md#install).
+`self` and `selfupdate` are aliases for `self-update`, with the same options (`--check`, `--force`, `--timeout`, `--color`). Suggested commands in permission errors are highlighted in cyan on terminals; `NO_COLOR`, redirection or `--color never` keep them plain. This explicit command replaces the executable; ordinary scans remain read-only. It selects the matching architecture, validates standalone Go/ELF metadata and installs atomically over verified HTTPS. No external tools or checksum file are required. [Update options and trust boundary](docs/reference.md#install).
 
 ## Usage
 
@@ -90,7 +91,7 @@ ca-trust-audit self-update            # update; use sudo if the directory requir
 
 | Default / control | Meaning |
 | --- | --- |
-| `--workers` | Available logical CPUs (`nproc` equivalent, using Go); override with any positive integer. At most one worker per selected container. |
+| `--workers` | Available logical CPUs (`nproc` equivalent, using Go); override with any positive integer. Bounds concurrent containers and total simultaneous TLS checks across all targets. |
 | `--timeout 10s` | Per-operation deadline, range 1ms–5m; signals cancel the scan. |
 | `--progress auto` | Progress on terminal stderr; `always` enables plain CI logs, `never` disables it. |
 | `--color auto` | Meaningful terminal colors; `NO_COLOR`, redirection and `TERM=dumb` disable automatic colors. `always` / `never` override detection. |
@@ -101,7 +102,9 @@ ca-trust-audit self-update            # update; use sudo if the directory requir
 [progress] 2/4 targets processed | elapsed    18s | ETA       ~12s | checking PHP cURL | container webapp
 ```
 
-ETA uses completed container timings and worker concurrency. It shows `estimating` until comparable samples exist (including host-only scans), or when a much slower target invalidates the estimate. JSON remains free of progress and color escapes.
+**Parallel checks:** the host is scanned first, then running containers in parallel. Within each client, chain requests also run in parallel; their shared global limit is `--workers`, so a single target benefits too. Clients within a target are tested one after another, each with its own positive control.
+
+**Conservative ETA:** uses twice the slowest completed container duration plus a 10-second buffer, worker concurrency and queued work. Before measurements, it starts with a generous budget (normally 1 minute per online target, 15 seconds offline). Long-running targets expand the estimate; it never gets stuck at `~1s`. Before Docker discovery, `target ETA` covers only the active target. Estimates can increase and are not deadlines. JSON remains free of progress and color escapes.
 
 **Selection rules:** stopped containers are excluded. `--host` conflicts with container-only selection. CA paths refer to paths **inside each selected target**. Missing Docker leaves host results available; inaccessible Docker is reported as incomplete coverage. [All CLI semantics and limits](docs/reference.md#cli).
 
@@ -219,6 +222,7 @@ CA_TRUST_AUDIT_RUNTIME_TESTS=1 go test -v ./pkg/probes -run TestInstalledRuntime
 CA_TRUST_AUDIT_DOCKER_TESTS=1 go test -v ./pkg/audit -run TestRealDockerShellless
 docker pull webdevops/php-apache:8.5-alpine
 CA_TRUST_AUDIT_PHP_IMAGE_TESTS=1 go test -v ./pkg/probes -run TestPHP85Image
+CA_TRUST_AUDIT_PHP_IMAGE_TESTS=1 go test -v ./pkg/audit -run TestPHP85ParallelChains
 CA_TRUST_AUDIT_PHP_IMAGE_TESTS=1 go test -v ./cmd/ca-trust-audit -run TestPHP85CLI
 # Explicit third-party network suite; discloses connection metadata:
 CA_TRUST_AUDIT_NETWORK_TESTS=1 go test -v ./pkg/probes -run TestPublishedEndpoints

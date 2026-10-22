@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.2.2
+
+- Add `self` as an alias for `self-update`, including all existing update options.
+- Highlight command suggestions in self-update permission errors in cyan, with
+  automatic terminal detection, `NO_COLOR` and `--color auto|always|never`.
+- Use conservative ETAs with twice the slowest completed container duration,
+  generous initial budgets and a 10-second buffer. Slow targets expand the numeric
+  estimate rather than getting stuck at one second or losing the estimate.
+- Parallelize per-client TLS chain requests, with a global `--workers` limit shared
+  by all targets and positive controls; retain deterministic evidence and progress.
+- Add a minimal SVG trust diagram and restructure the README with navigation,
+  command/result tables and a complete linked technical reference.
+
 ## v0.2.1
 
 - Explain the incident, urgency, remediation and CVE-2026-111943 at the top of the

@@ -26,6 +26,10 @@ const maxDownload = 64 << 20
 
 var releaseVersion = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$`)
 
+// ErrInstallLocation means staging beside the executable failed. The CLI may
+// highlight its trusted command suggestions without coloring arbitrary errors.
+var ErrInstallLocation = errors.New("cannot write beside the executable; run sudo ca-trust-audit self-update or use the installer with a writable --install-dir")
+
 type Options struct {
 	CurrentVersion string
 	CheckOnly      bool
@@ -117,7 +121,7 @@ func (u updater) run(ctx context.Context, o Options) (Result, error) {
 	}
 	stage, err := os.CreateTemp(filepath.Dir(r.Path), ".ca-trust-audit-update-*")
 	if err != nil {
-		return r, errors.New("cannot write beside the executable; run sudo ca-trust-audit self-update or use the installer with a writable --install-dir")
+		return r, ErrInstallLocation
 	}
 	defer os.Remove(stage.Name())
 	defer stage.Close()

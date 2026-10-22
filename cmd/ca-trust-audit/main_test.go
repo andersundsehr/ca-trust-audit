@@ -13,7 +13,7 @@ func TestCLIErrorsAndVersion(t *testing.T) {
 	for _, tc := range []struct {
 		args []string
 		want int
-	}{{[]string{"--version"}, 0}, {[]string{"--help"}, 0}, {[]string{"--unknown"}, 2}, {[]string{"extra"}, 2}, {[]string{"--host-only", "--containers-only"}, 2}, {[]string{"--workers", "0", "--timeout", "-1s"}, 2}, {[]string{"self-update", "--help"}, 0}, {[]string{"selfupdate", "--help"}, 0}, {[]string{"self-update", "extra"}, 2}, {[]string{"self-update", "--check", "--force"}, 2}, {[]string{"self-update", "--timeout", "0"}, 2}} {
+	}{{[]string{"--version"}, 0}, {[]string{"--help"}, 0}, {[]string{"--unknown"}, 2}, {[]string{"extra"}, 2}, {[]string{"--host-only", "--containers-only"}, 2}, {[]string{"--workers", "0", "--timeout", "-1s"}, 2}, {[]string{"self-update", "--help"}, 0}, {[]string{"selfupdate", "--help"}, 0}, {[]string{"self", "--help"}, 0}, {[]string{"self", "--check", "--force"}, 2}, {[]string{"self-update", "extra"}, 2}, {[]string{"self-update", "--check", "--force"}, 2}, {[]string{"self-update", "--timeout", "0"}, 2}} {
 		var out, err bytes.Buffer
 		got := run(context.Background(), tc.args, &out, &err)
 		if got != tc.want {
@@ -35,7 +35,7 @@ func TestHostAliasAndWorkerHelp(t *testing.T) {
 	if code := run(context.Background(), []string{"--help"}, &out, &errout); code != 0 {
 		t.Fatal(code)
 	}
-	for _, text := range []string{"-host", "alias for --host-only", "maximum concurrent container scans", fmt.Sprintf("(default %d)", runtime.NumCPU())} {
+	for _, text := range []string{"-host", "alias for --host-only", "concurrent containers and global TLS-check limit", fmt.Sprintf("(default %d)", runtime.NumCPU())} {
 		if !strings.Contains(errout.String(), text) {
 			t.Fatalf("missing help %q: %s", text, errout.String())
 		}

@@ -34,22 +34,22 @@ func progressEnabled(mode string, w io.Writer) (bool, error) {
 }
 
 type scanProgress struct {
-	lastDraw         time.Time
-	mu               sync.Mutex
-	w                io.Writer
-	interactive      bool
-	start            time.Time
-	message          string
-	target           string
-	completed, total int
-	totalKnown       bool
-	workers          int
-	active           map[string]progressTarget
-	containerTime    time.Duration
-	containersDone   int
-	finalETA         string
-	lastLog          map[string]string
-	stop, done       chan struct{}
+	lastDraw          time.Time
+	mu                sync.Mutex
+	w                 io.Writer
+	interactive       bool
+	start             time.Time
+	message           string
+	target            string
+	completed, total  int
+	totalKnown        bool
+	workers           int
+	active            map[string]progressTarget
+	initialTargetTime time.Duration
+	containerLongest  time.Duration
+	finalETA          string
+	lastLog           map[string]string
+	stop, done        chan struct{}
 }
 
 type progressTarget struct {
@@ -57,8 +57,8 @@ type progressTarget struct {
 	started time.Time
 }
 
-func newScanProgress(w io.Writer, interactive bool, workers int) *scanProgress {
-	p := &scanProgress{w: w, interactive: interactive, workers: max(1, workers), start: time.Now(), active: map[string]progressTarget{}, lastLog: map[string]string{}, stop: make(chan struct{}), done: make(chan struct{})}
+func newScanProgress(w io.Writer, interactive bool, workers int, initialTargetTime time.Duration) *scanProgress {
+	p := &scanProgress{w: w, interactive: interactive, workers: max(1, workers), initialTargetTime: initialTargetTime, start: time.Now(), active: map[string]progressTarget{}, lastLog: map[string]string{}, stop: make(chan struct{}), done: make(chan struct{})}
 	go func() {
 		defer close(p.done)
 		ticker := time.NewTicker(time.Second)
@@ -120,8 +120,7 @@ func (p *scanProgress) Update(event audit.Progress) {
 		message = fmt.Sprintf("checking %s (%d/%d chains processed)", event.Client, event.Completed, event.Total)
 	case audit.PhaseTargetCompleted:
 		if sample, ok := p.active[key]; ok && sample.kind == "container" {
-			p.containerTime += now.Sub(sample.started)
-			p.containersDone++
+			p.containerLongest = max(p.containerLongest, now.Sub(sample.started))
 		}
 		delete(p.active, key)
 		p.completed++
@@ -154,33 +153,48 @@ func (p *scanProgress) startTarget(key string, target report.Target, now time.Ti
 	}
 }
 
-// estimate models remaining container jobs on the configured worker pool using
-// completed container durations. Host timings cannot predict container work.
+// estimate deliberately favors generous estimates: twice the slowest completed
+// container plus a buffer, expanded when active jobs take longer. Before samples
+// exist it uses an initial budget. Host timings cannot predict container work.
+// Without a discovered total the estimate covers active targets only.
 func (p *scanProgress) estimate(now time.Time) (time.Duration, bool) {
-	if !p.totalKnown {
-		return 0, false
-	}
 	remaining := p.total - p.completed
+	if !p.totalKnown {
+		remaining = len(p.active)
+		if remaining == 0 {
+			return 0, false
+		}
+	}
 	if remaining <= 0 {
 		return 0, true
 	}
 	capacity := min(max(1, p.workers), remaining)
-	if p.containersDone == 0 || len(p.active) > capacity {
+	if len(p.active) > capacity {
 		return 0, false
 	}
-	average := p.containerTime / time.Duration(p.containersDone)
-	if average <= 0 {
-		return 0, false
+	initial := p.initialTargetTime
+	if initial <= 0 {
+		initial = time.Minute
+	}
+	const buffer = 10 * time.Second
+	containerBudget := initial
+	if p.containerLongest > 0 {
+		containerBudget = 2*p.containerLongest + buffer
+	}
+	for _, target := range p.active {
+		if target.kind == "container" {
+			containerBudget = max(containerBudget, 2*max(0, now.Sub(target.started))+buffer)
+		}
 	}
 	loads := make([]time.Duration, capacity)
 	index := 0
 	for _, target := range p.active {
-		age := now.Sub(target.started)
-		if target.kind != "container" || age > max(3*average, 5*time.Second) {
-			// A target much slower than the samples invalidates the estimate.
-			return 0, false
+		age := max(0, now.Sub(target.started))
+		budget := containerBudget
+		if target.kind != "container" {
+			budget = max(initial, 2*age+buffer)
 		}
-		loads[index] = max(average-age, time.Second)
+		loads[index] = budget - age
 		index++
 	}
 	for queued := remaining - len(p.active); queued > 0; queued-- {
@@ -190,13 +204,13 @@ func (p *scanProgress) estimate(now time.Time) (time.Duration, bool) {
 				least = i
 			}
 		}
-		loads[least] += average
+		loads[least] += containerBudget
 	}
 	var eta time.Duration
 	for _, load := range loads {
 		eta = max(eta, load)
 	}
-	return max(eta, time.Second), true
+	return eta, true
 }
 
 func (p *scanProgress) draw() {
@@ -207,6 +221,10 @@ func (p *scanProgress) draw() {
 		counter = fmt.Sprintf("%d/%d targets processed", p.completed, p.total)
 	}
 	eta := "estimating"
+	etaLabel := "ETA"
+	if !p.totalKnown && len(p.active) > 0 {
+		etaLabel = "target ETA"
+	}
 	if remaining, known := p.estimate(now); known {
 		eta = "~" + ((remaining + time.Second - 1) / time.Second * time.Second).String()
 	}
@@ -214,7 +232,7 @@ func (p *scanProgress) draw() {
 		eta = p.finalETA
 	}
 	elapsed := now.Sub(p.start).Truncate(time.Second)
-	prefix := fmt.Sprintf("[progress] %s | elapsed %6s | ETA %10s", counter, elapsed, eta)
+	prefix := fmt.Sprintf("[progress] %s | elapsed %6s | %s %10s", counter, elapsed, etaLabel, eta)
 	width := 0
 	if p.interactive {
 		if f, ok := p.w.(*os.File); ok {
@@ -225,7 +243,7 @@ func (p *scanProgress) draw() {
 			if p.totalKnown {
 				counter = fmt.Sprintf("%d/%d", p.completed, p.total)
 			}
-			prefix = fmt.Sprintf("[progress] %s | %5s | ETA %10s", counter, elapsed, eta)
+			prefix = fmt.Sprintf("[progress] %s | %5s | %s %10s", counter, elapsed, etaLabel, eta)
 		}
 	}
 	line := fitProgress(prefix, p.message, p.target, width)

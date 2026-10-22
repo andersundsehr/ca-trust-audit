@@ -57,6 +57,10 @@ jobs:
         env:
           CA_TRUST_AUDIT_PHP_IMAGE_TESTS: '1'
         run: go test -v -count=1 -timeout=2m ./pkg/probes -run '^TestPHP85Image$'
+      - name: Parallel PHP chain checks through the audit engine
+        env:
+          CA_TRUST_AUDIT_PHP_IMAGE_TESTS: '1'
+        run: go test -v -count=1 -timeout=2m ./pkg/audit -run '^TestPHP85ParallelChains$'
       - name: Standalone CLI output, JSON and exit codes on PHP image
         env:
           CA_TRUST_AUDIT_PHP_IMAGE_TESTS: '1'

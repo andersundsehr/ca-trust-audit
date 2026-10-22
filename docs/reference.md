@@ -63,7 +63,8 @@ ca-trust-audit self-update                      # install the latest matching re
 sudo ca-trust-audit self-update                 # if the installation directory requires root
 ```
 
-`selfupdate` is an alias for `self-update`. This explicit command is the only
+`self` and `selfupdate` are aliases for `self-update`, forwarding all the same
+options (`--check`, `--force`, `--timeout`, `--color`). This explicit command is the only
 scanner operation that replaces its executable; ordinary scans remain read-only.
 It selects Linux AMD64/ARM64, follows verified HTTPS redirects, bounds the download
 to 64 MiB, and checks ELF architecture and standalone Go build metadata before an
@@ -76,6 +77,12 @@ The command exits 0 on success/check (including an available update), 2 on failu
 `--timeout` bounds the whole update (default 2m, range 1s–10m). No privileges are
 elevated automatically. Matching or newer stable versions remain unchanged unless
 `--force` explicitly requests a reinstall/downgrade to the latest release.
+
+Permission-error command suggestions (`sudo ca-trust-audit self-update` and
+`--install-dir`) appear in cyan on terminal stderr. `--color auto|always|never`
+defaults to `auto`; `NO_COLOR`, `TERM=dumb` and redirected stderr disable automatic
+colors. `always` explicitly overrides detection. Error text is sanitized before
+the trusted command suggestions receive color escapes.
 
 A default run scans the current local filesystem, discovers Docker, and scans each
 **running** container independently. Inside a container, the current filesystem is
@@ -113,11 +120,16 @@ in explicitly designated trust directories, not unrelated application files.
 
 `--timeout` is a per-operation deadline (default 10 seconds, range 1ms–5m), not a
 whole-scan budget. Built-in runtime requests also impose a ten-second network
-limit. `--workers` bounds concurrent **container targets**. Its default is the
+limit. `--workers` bounds concurrent **container targets** and shares a global
+limit for **live TLS checks**, including positive controls. Chain requests within
+one client run in parallel; clients within each target run one after another.
+The host is scanned before Docker discovery and container scans. Waiting for a
+TLS slot does not consume the individual request timeout. `--workers` defaults to the
 available logical CPU count (`runtime.NumCPU()`, the Go equivalent of `nproc`,
 including CPU affinity); no external `nproc` command is required. An explicit
-positive integer overrides it. The actual worker count is also capped by the
-number of selected containers; chains and clients within a target are sequential. Signals propagate
+positive integer overrides it. The container worker count is capped by the
+number of selected containers; chain workers are capped by the number of chains.
+Signals propagate
 cancellation; canceled scans return exit 2. Library callers can set an overall
 context deadline. On a remote Docker daemon, canceled exec attachment may leave
 the narrowly scoped client running until its own timeout; the scanner never kills
@@ -162,11 +174,18 @@ of passed security checks. A heartbeat updates elapsed time during slow requests
 Interactive redraws are capped at four per second across all workers and phases;
 long labels are shortened to fit the terminal width without wrapping. Narrow
 terminals use a compact counter/time layout, with the target kept at the end.
-ETA uses completed container durations, active-target elapsed time, queued targets
-and the configured worker count. It shows `estimating` until comparable samples
-exist, including host-only scans, or when a much slower target invalidates the
-estimate. Containers can differ substantially; ETA is a scheduling estimate,
-not a deadline or a security result. Interrupted scans show ETA `n/a`.
+ETA deliberately favors generous estimates. A container's initial budget is twice
+the slowest completed container duration plus 10 seconds. Before container samples
+exist, the budget is `max(1m, 3 × --timeout)` online or `max(15s, --timeout)` offline;
+the host uses that initial budget independently. Any active target expands its
+budget to at least twice its elapsed time plus 10 seconds. Queued container work
+uses the expanded container budget and the configured worker count.
+Thus overdue work increases the numeric ETA instead of repeatedly promising
+`~1s` or discarding the estimate. Before the target total is known, `target ETA`
+covers only the active target, excluding undiscovered containers. `estimating`
+is reserved for discovery without active work. Containers and their runtimes can
+differ substantially; the buffered ETA is a scheduling estimate, not a deadline,
+guaranteed upper bound or security result. Interrupted scans show ETA `n/a`.
 `--progress auto|always|never` defaults to `auto`. Use `always` for plain stage logs
 in CI or `never` for silent progress. Redirected output has no progress by default.
 `--json -` keeps stdout exclusively JSON, even with progress explicitly enabled.
@@ -425,6 +444,7 @@ supply another definition without rewriting the engine.
 
 Implement `probes.Probe`: `Name`, bounded `Discover`, and `Check`. Pass probes in
 `Options.Probes` (nil selects defaults; an empty slice disables external probes).
+Probes and runners must support concurrent calls across targets and chains.
 Return normalized `Result` categories and an observed leaf SHA-256 on acceptance.
 The engine performs positive controls and pinned-identity checks. Never convert
 transport errors to certificate rejection or infer another runtime's policy from

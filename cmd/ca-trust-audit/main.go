@@ -26,13 +26,13 @@ type paths []string
 func (p *paths) String() string     { return fmt.Sprint([]string(*p)) }
 func (p *paths) Set(v string) error { *p = append(*p, v); return nil }
 func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
-	if len(args) > 0 && (args[0] == "self-update" || args[0] == "selfupdate") {
+	if len(args) > 0 && (args[0] == "self-update" || args[0] == "selfupdate" || args[0] == "self") {
 		return runSelfUpdate(ctx, args[1:], stdout, stderr)
 	}
 	flags := flag.NewFlagSet("ca-trust-audit", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	flags.Usage = func() {
-		fmt.Fprintln(stderr, "Usage: ca-trust-audit [scan flags]\n       ca-trust-audit self-update [--check | --force] [--timeout 2m]\n\nScan flags:")
+		fmt.Fprintln(stderr, "Usage: ca-trust-audit [scan flags]\n       ca-trust-audit self-update [--check | --force] [--timeout 2m]\n       Update aliases: self, selfupdate\n\nScan flags:")
 		flags.PrintDefaults()
 	}
 	var o audit.Options
@@ -50,7 +50,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	flags.BoolVar(&verbose, "verbose", false, "include all per-chain results")
 	flags.BoolVar(&strict, "strict", false, "exit 3 on incomplete supported TLS coverage unless vulnerable")
 	flags.DurationVar(&o.Timeout, "timeout", 10*time.Second, "deadline per file, discovery or client request (1ms..5m)")
-	flags.IntVar(&o.Workers, "workers", runtime.NumCPU(), "maximum concurrent container scans (default: available CPUs; minimum 1)")
+	flags.IntVar(&o.Workers, "workers", runtime.NumCPU(), "concurrent containers and global TLS-check limit (default: available CPUs; minimum 1)")
 	flags.Var(&dirs, "ca-dir", "additional absolute certificate directory (repeatable; bounded traversal)")
 	flags.Var(&ca, "ca-file", "additional absolute PEM bundle path (repeatable, applied in each target)")
 	flags.BoolVar(&showVersion, "version", false, "print build metadata")
@@ -86,7 +86,11 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	}
 	var progress *scanProgress
 	if showProgress {
-		progress = newScanProgress(stderr, isTerminal(stderr), o.Workers)
+		initialTargetTime := max(time.Minute, 3*o.Timeout)
+		if o.Offline {
+			initialTargetTime = max(15*time.Second, o.Timeout)
+		}
+		progress = newScanProgress(stderr, isTerminal(stderr), o.Workers, initialTargetTime)
 		o.Progress = progress.Update
 	}
 	r, e := audit.Scan(ctx, o)

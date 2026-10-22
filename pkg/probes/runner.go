@@ -14,6 +14,7 @@ import (
 const MaxOutput = 1 << 20
 
 // Runner is also implemented by Docker. Arguments are passed directly, without a shell.
+// Implementations must support concurrent Run calls.
 type Runner interface {
 	Run(context.Context, string, ...string) ([]byte, error)
 }

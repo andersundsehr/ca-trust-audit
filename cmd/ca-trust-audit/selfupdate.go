@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/andersundsehr/ca-trust-audit/internal/selfupdate"
@@ -15,6 +17,8 @@ func runSelfUpdate(ctx context.Context, args []string, stdout, stderr io.Writer)
 	flags.SetOutput(stderr)
 	var check, force bool
 	var timeout time.Duration
+	var colorMode string
+	flags.StringVar(&colorMode, "color", "auto", "command colors in errors: auto, always, or never (NO_COLOR disables auto)")
 	flags.BoolVar(&check, "check", false, "check the latest release without changing files")
 	flags.BoolVar(&force, "force", false, "reinstall even if current or newer than the latest release")
 	flags.DurationVar(&timeout, "timeout", 2*time.Minute, "whole-update deadline (1s..10m)")
@@ -25,7 +29,12 @@ func runSelfUpdate(ctx context.Context, args []string, stdout, stderr io.Writer)
 		return 2
 	}
 	if flags.NArg() != 0 || timeout < time.Second || timeout > 10*time.Minute || (check && force) {
-		fmt.Fprintln(stderr, "self-update accepts --check, --force and --timeout 1s..10m; check and force are mutually exclusive")
+		fmt.Fprintln(stderr, "self-update accepts --check, --force, --color auto|always|never and --timeout 1s..10m; check and force are mutually exclusive")
+		return 2
+	}
+	useColor, err := colorEnabled(colorMode, stderr)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
 		return 2
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
@@ -34,7 +43,7 @@ func runSelfUpdate(ctx context.Context, args []string, stdout, stderr io.Writer)
 		fmt.Fprintln(stderr, "[update]", message)
 	}})
 	if err != nil {
-		fmt.Fprintln(stderr, "self-update failed:", err)
+		fmt.Fprintln(stderr, "self-update failed:", updateErrorDetail(err, useColor))
 		return 2
 	}
 	switch {
@@ -48,4 +57,15 @@ func runSelfUpdate(ctx context.Context, args []string, stdout, stderr io.Writer)
 		fmt.Fprintf(stdout, "Update available: %s -> %s\nRun: ca-trust-audit self-update\n", r.Current, r.Latest)
 	}
 	return 0
+}
+
+func updateErrorDetail(err error, color bool) string {
+	detail := progressText(err.Error())
+	if !color || !errors.Is(err, selfupdate.ErrInstallLocation) {
+		return detail
+	}
+	return strings.NewReplacer(
+		"sudo ca-trust-audit self-update", "\x1b[36msudo ca-trust-audit self-update\x1b[0m",
+		"--install-dir", "\x1b[36m--install-dir\x1b[0m",
+	).Replace(detail)
 }
