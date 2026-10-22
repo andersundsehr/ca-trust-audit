@@ -4,4 +4,4 @@ go 1.26.0
 
 require github.com/google/certificate-transparency-go v1.4.0
 
-require golang.org/x/crypto v0.48.0 // indirect
+require golang.org/x/crypto v0.58.0 // indirect

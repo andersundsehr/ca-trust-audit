@@ -5,7 +5,7 @@ Go API, host and running-Docker-container coverage, and separate live-client and
 explicit trust-store evidence. Linux AMD64 and ARM64, including Linux under WSL.
 No Go, Python, OpenSSL, curl or Java installation is required to **run** the scanner.
 The offline verifier uses `github.com/google/certificate-transparency-go/x509`
-(pinned v1.4.0) and its `golang.org/x/crypto` dependency (v0.48.0). This small
+(pinned v1.4.0) and its `golang.org/x/crypto` dependency (v0.58.0). This small
 compiled dependency set lets explicit PEM evaluation remain independent of the
 scanner Go runtime’s incident denylist, while retaining real signature, validity,
 constraint and hostname checks. No verification checks are disabled. Optional installed clients provide
