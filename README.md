@@ -45,8 +45,31 @@ curl -qfsSL https://github.com/andersundsehr/ca-trust-audit/releases/latest/down
 For a user-local installation, `$HOME/.local/bin` must be on `PATH`; otherwise the
 installer prints the executable's full path. For manual inspection/download, see
 [install.sh](install.sh) and [GitHub Releases](https://github.com/andersundsehr/ca-trust-audit/releases).
+Release changes are recorded in [CHANGELOG.md](CHANGELOG.md).
 The installer does not download or check checksum files. Downloads always use
 verified HTTPS.
+
+Update an installed scanner directly, without curl or other external programs:
+
+```sh
+ca-trust-audit self-update --check              # only check for a newer release
+ca-trust-audit self-update                      # install the latest matching release
+sudo ca-trust-audit self-update                 # if the installation directory requires root
+```
+
+`selfupdate` is an alias for `self-update`. This explicit command is the only
+scanner operation that replaces its executable; ordinary scans remain read-only.
+It selects Linux AMD64/ARM64, follows verified HTTPS redirects, bounds the download
+to 64 MiB, and checks ELF architecture and standalone Go build metadata before an
+atomic replacement in the same directory. A symlinked command updates its resolved
+target. Failed downloads, invalid binaries and cancellation before replacement
+preserve the old executable. No checksum file is downloaded. HTTPS and the GitHub
+release account are the download trust boundary; build metadata is a format check,
+not an independent signature. Progress goes to stderr; the result goes to stdout.
+The command exits 0 on success/check (including an available update), 2 on failure.
+`--timeout` bounds the whole update (default 2m, range 1s–10m). No privileges are
+elevated automatically. Matching or newer stable versions remain unchanged unless
+`--force` explicitly requests a reinstall/downgrade to the latest release.
 
 A default run scans the current local filesystem, discovers Docker, and scans each
 **running** container independently. Inside a container, the current filesystem is
@@ -67,11 +90,14 @@ ca-trust-audit --ca-dir /opt/app/public-cas      # bounded, certificate-only tra
 ca-trust-audit --json report.json               # terminal + new mode-0600 JSON file
 ca-trust-audit --json -                         # JSON only, on stdout
 ca-trust-audit --verbose --timeout 10s --workers 4
+ca-trust-audit --progress always                # stage updates on stderr, including CI
+ca-trust-audit --color never                    # disable terminal colors
 ca-trust-audit --strict
 ca-trust-audit --version
 ```
 
-Existing JSON files are never overwritten. There are no positional arguments.
+Existing JSON files are never overwritten. Scan mode accepts no positional arguments;
+`self-update` is a separate command and does not run a scan.
 `--host-only` conflicts with `--containers-only` and `--container`.
 `--container` selects only that container and must match one running container.
 Additional CA paths apply **inside each selected target**; they are not host bind
@@ -103,6 +129,33 @@ chains), **PROBLEM** (confirmed acceptance), **NOT VERIFIED** (missing or incomp
 evidence), **REVIEW** (potential finding), and **UNSUPPORTED**. A passed CA-file
 check does not imply that live client checks passed. JSON retains the precise
 status codes documented below; exit codes are unchanged.
+
+The final summary repeats each host/container with a confirmed problem, its name
+and short container ID, and the affected clients/CA-file paths. Repeated chains
+are grouped once per client or path; large lists show three entries plus the
+remaining count (full paths/results remain in target details and JSON).
+Incomplete coverage and potential findings
+are highlighted separately, including when no confirmed problems were detected.
+
+Interactive terminals use green **PASSED**, red **PROBLEM**, yellow **NOT VERIFIED**
+and **REVIEW**, and gray **UNSUPPORTED** / **UNAVAILABLE**. Incomplete coverage is
+yellow; complete coverage is cyan, not a claim of application safety. Labels remain
+readable without color. `--color auto|always|never` defaults to `auto`: redirected
+output, `TERM=dumb`, and a nonempty `NO_COLOR` disable automatic colors. `always`
+explicitly overrides detection. JSON never contains presentation escape sequences.
+
+Progress appears on **stderr** in interactive terminals. It shows the active
+target/client or CA-file stage, elapsed time, and targets processed. The target
+total becomes known after Docker discovery; this is a work counter, not a count
+of passed security checks. A heartbeat updates elapsed time during slow requests.
+`--progress auto|always|never` defaults to `auto`. Use `always` for plain stage logs
+in CI or `never` for silent progress. Redirected output has no progress by default.
+`--json -` keeps stdout exclusively JSON, even with progress explicitly enabled.
+
+```text
+[progress] container webapp: HTTPS positive control for PHP cURL | 1/4 targets processed | elapsed 8s
+[progress] Scan finished | 4/4 targets processed | elapsed 21s
+```
 
 ## Evidence and threat model
 
@@ -312,6 +365,15 @@ explicit supplied root set; it never silently consults host system roots.
 Public `Identity`, `Chain`, `Incident`, `Policy`, `Target`, `Finding`, `Evidence`,
 `ClientCoverage`, `Coverage`, `TargetReport`, and `Report` types define the API.
 The `Files` and `probes.Runner` interfaces permit bounded in-memory/custom targets.
+
+Set `Options.Progress func(audit.Progress)` for optional stage notifications. `Scan`
+serializes callbacks across its container workers; keep callbacks short. Events
+describe work, not findings, and never modify report/JSON data. `Completed`/`Total`
+refer to the event's phase; `PhaseTargetsDiscovered` supplies the selected target
+count. Independent concurrent `Scan`/`ScanTarget` calls need caller synchronization.
+Library rendering stays plain with `report.Terminal`; use
+`report.TerminalWithOptions` and `report.TerminalOptions{Color: true}` to request
+human colors explicitly.
 
 ### Representative PHP/Apache image
 

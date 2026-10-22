@@ -26,12 +26,21 @@ type paths []string
 func (p *paths) String() string     { return fmt.Sprint([]string(*p)) }
 func (p *paths) Set(v string) error { *p = append(*p, v); return nil }
 func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+	if len(args) > 0 && (args[0] == "self-update" || args[0] == "selfupdate") {
+		return runSelfUpdate(ctx, args[1:], stdout, stderr)
+	}
 	flags := flag.NewFlagSet("ca-trust-audit", flag.ContinueOnError)
 	flags.SetOutput(stderr)
+	flags.Usage = func() {
+		fmt.Fprintln(stderr, "Usage: ca-trust-audit [scan flags]\n       ca-trust-audit self-update [--check | --force] [--timeout 2m]\n\nScan flags:")
+		flags.PrintDefaults()
+	}
 	var o audit.Options
-	var output string
+	var output, progressMode, colorMode string
 	var verbose, strict, showVersion bool
 	var ca, dirs paths
+	flags.StringVar(&colorMode, "color", "auto", "terminal colors: auto, always, or never (NO_COLOR disables auto)")
+	flags.StringVar(&progressMode, "progress", "auto", "progress on stderr: auto (terminal only), always, or never")
 	flags.BoolVar(&o.HostOnly, "host-only", false, "scan only the local filesystem")
 	flags.BoolVar(&o.ContainersOnly, "containers-only", false, "scan only running containers")
 	flags.StringVar(&o.Container, "container", "", "scan one running container by name or ID")
@@ -64,7 +73,25 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	}
 	o.CAPaths = ca
 	o.CADirectories = dirs
+	useColor, e := colorEnabled(colorMode, stdout)
+	if e != nil {
+		fmt.Fprintln(stderr, e)
+		return 2
+	}
+	showProgress, e := progressEnabled(progressMode, stderr)
+	if e != nil {
+		fmt.Fprintln(stderr, e)
+		return 2
+	}
+	var progress *scanProgress
+	if showProgress {
+		progress = newScanProgress(stderr, isTerminal(stderr))
+		o.Progress = progress.Update
+	}
 	r, e := audit.Scan(ctx, o)
+	if progress != nil {
+		progress.Close(e)
+	}
 	if e != nil {
 		fmt.Fprintln(stderr, "scan failed:", e)
 		return 2
@@ -94,7 +121,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		}
 	}
 	if output != "-" {
-		if e = report.Terminal(stdout, r, verbose); e != nil {
+		if e = report.TerminalWithOptions(stdout, r, report.TerminalOptions{Verbose: verbose, Color: useColor}); e != nil {
 			fmt.Fprintln(stderr, "write report:", e)
 			return 2
 		}

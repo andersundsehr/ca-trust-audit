@@ -1,0 +1,23 @@
+# Changelog
+
+## v0.2.0
+
+- Add terminal progress with elapsed time, target counts and per-client stages.
+  Redirected progress is opt-in; JSON stdout remains clean.
+- Color human results by meaning, with `--color` and `NO_COLOR` support.
+- Repeat affected containers/hosts and their clients/CA paths in the final summary.
+  Keep confirmed problems, potential findings and incomplete coverage separate.
+- Add `self-update` (`selfupdate` alias), `--check` and `--force`. Updates select
+  AMD64/ARM64, use verified HTTPS, check standalone Go/ELF metadata, and replace
+  the executable atomically. No external tools or checksum downloads are required.
+- Extend race, stream-separation and PHP 8.5 CLI integration coverage.
+
+## v0.1.1
+
+- Remove checksum downloads/checks from the automatic architecture-aware installer.
+
+## v0.1.0
+
+- Initial Go library and standalone Linux AMD64/ARM64 CLI for eMudhra trust audits.
+- Add verified incident fixtures, separate live/runtime and PEM-store evidence,
+  Docker archive analysis, JSON reporting, tests and GitHub release workflows.

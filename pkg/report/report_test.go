@@ -61,3 +61,57 @@ func TestPlainLanguageStaticAndLiveSeparation(t *testing.T) {
 		t.Fatal("false assurance")
 	}
 }
+
+func TestSummaryHighlightsAffectedTargets(t *testing.T) {
+	r := Report{Warnings: []string{"Docker discovery incomplete"}, Targets: []TargetReport{
+		{Target: Target{Kind: "host", Name: "local filesystem"}, Findings: []Finding{{Status: VulnerableClient, Client: "curl"}}},
+		{Target: Target{Kind: "container", Name: "webapp", ID: "1234567890abcdef"}, Findings: []Finding{
+			{Status: VulnerableClient, Client: "PHP cURL", Chain: "first"},
+			{Status: VulnerableClient, Client: "PHP cURL", Chain: "second"},
+			{Status: VulnerableStore, Path: "/opt/app/ca.pem", Chain: "first"},
+			{Status: VulnerableStore, Path: "/opt/app/ca.pem", Chain: "second"},
+		}},
+		{Target: Target{Kind: "container", Name: "worker"}, Findings: []Finding{{Status: VulnerableClient, Client: "Python ssl"}}},
+		{Target: Target{Kind: "container", Name: "passed"}, Coverage: Coverage{Complete: true}, Findings: []Finding{{Status: Rejected}}},
+		{Target: Target{Kind: "container", Name: "review"}, Findings: []Finding{{Status: Potential}, {Status: Potential}}},
+	}}
+	r.Summarize()
+	var b bytes.Buffer
+	if e := Terminal(&b, r, false); e != nil {
+		t.Fatal(e)
+	}
+	_, summary, found := strings.Cut(b.String(), "\nSUMMARY\n")
+	if !found {
+		t.Fatal("summary missing")
+	}
+	for _, want := range []string{
+		"Targets: 5 (hosts=1, containers=4)",
+		"PROBLEM confirmed: clients=3, CA files=1",
+		"PROBLEM host local filesystem\n    Clients: curl",
+		"PROBLEM container webapp (1234567890ab)\n    Clients: PHP cURL\n    CA files: /opt/app/ca.pem",
+		"PROBLEM container worker\n    Clients: Python ssl",
+		"NOT VERIFIED incomplete coverage: targets=4, scan warnings=1",
+		"REVIEW targets with potential findings: 1",
+		"Action: update",
+	} {
+		if !strings.Contains(summary, want) {
+			t.Fatalf("missing %q in summary: %s", want, summary)
+		}
+	}
+	if strings.Contains(summary, "PROBLEM container passed") || strings.Contains(summary, "PROBLEM container review") || strings.Count(summary, "PHP cURL") != 1 || strings.Count(summary, "/opt/app/ca.pem") != 1 {
+		t.Fatalf("summary duplicates evidence or mislabels targets: %s", summary)
+	}
+}
+
+func TestNoConfirmedProblemsStillShowsCoverageWarning(t *testing.T) {
+	r := Report{Targets: []TargetReport{{Target: Target{Kind: "container", Name: "unknown"}}}}
+	r.Summarize()
+	var b bytes.Buffer
+	if e := Terminal(&b, r, false); e != nil {
+		t.Fatal(e)
+	}
+	_, summary, _ := strings.Cut(b.String(), "\nSUMMARY\n")
+	if !strings.Contains(summary, "Confirmed problems: none detected.") || !strings.Contains(summary, "NOT VERIFIED incomplete coverage: targets=1") || strings.Contains(summary, "PROBLEM ") {
+		t.Fatal(summary)
+	}
+}

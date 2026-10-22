@@ -171,14 +171,25 @@ func TestPHP85CLI(t *testing.T) {
 		}
 		checkReport(t, out)
 	})
+	t.Run("JSON remains clean with forced colors and progress", func(t *testing.T) {
+		out, errout, code := invoke(t, "--container", name, "--offline", "--json", "-", "--color", "always", "--progress", "always")
+		if code != 0 || !bytes.Contains(errout, []byte("Scan finished | 1/1 targets processed")) || bytes.Contains(errout, []byte("\x1b")) || bytes.Contains(out, []byte("\x1b")) {
+			t.Fatalf("presentation corrupted stream separation: exit=%d stderr=%q", code, errout)
+		}
+		checkReport(t, out)
+	})
 	t.Run("Problem and vulnerability exit precedence", func(t *testing.T) {
 		path := filepath.Join(dir, "problem.json")
-		out, errout, code := invoke(t, "--container", name, "--offline", "--strict", "--ca-file", "/fixture/incident-roots.pem", "--json", path)
+		out, errout, code := invoke(t, "--container", name, "--offline", "--strict", "--ca-file", "/fixture/incident-roots.pem", "--json", path, "--color", "always", "--progress", "never")
 		if code != 1 || len(errout) != 0 {
 			t.Fatalf("confirmed store problem must exit 1 despite strict incomplete coverage: exit=%d stderr=%s", code, errout)
 		}
-		if !bytes.Contains(out, []byte("CA FILES: PROBLEM")) {
-			t.Fatalf("missing problem wording: %s", out)
+		if !bytes.Contains(out, []byte("CA FILES: \x1b[31mPROBLEM\x1b[0m")) || !bytes.Contains(out, []byte("\x1b[32mPASSED\x1b[0m")) || !bytes.Contains(out, []byte("\x1b[33mNOT VERIFIED\x1b[0m")) {
+			t.Fatalf("missing meaningful status colors: %q", out)
+		}
+		_, summary, summaryFound := strings.Cut(string(out), "\n\x1b[1mSUMMARY\x1b[0m\n")
+		if !summaryFound || !strings.Contains(summary, "\x1b[31mPROBLEM\x1b[0m container "+name) || strings.Count(summary, "/fixture/incident-roots.pem") != 1 {
+			t.Fatalf("summary must repeat the affected container and CA path once: %q", summary)
 		}
 		b, e := os.ReadFile(path)
 		if e != nil {

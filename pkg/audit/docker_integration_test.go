@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/andersundsehr/ca-trust-audit/internal/testcert"
@@ -57,12 +59,30 @@ func TestMultipleShelllessContainers(t *testing.T) {
 	t.Setenv("DOCKER_TLS_VERIFY", "")
 	t.Setenv("DOCKER_TLS", "")
 	t.Setenv("DOCKER_CERT_PATH", "")
-	r, e := Scan(context.Background(), Options{ContainersOnly: true, Offline: true, Incident: &vulnerable.Incident, Probes: []probes.Probe{}})
+	var events []Progress
+	var callbackActive atomic.Bool
+	r, e := Scan(context.Background(), Options{ContainersOnly: true, Offline: true, Incident: &vulnerable.Incident, Probes: []probes.Probe{}, Progress: func(p Progress) {
+		if callbackActive.Swap(true) {
+			t.Error("progress callbacks must be serialized across container workers")
+		}
+		runtime.Gosched()
+		events = append(events, p)
+		callbackActive.Store(false)
+	}})
 	if e != nil {
 		t.Fatal(e)
 	}
 	if r.Summary.Containers != 2 || r.Summary.VulnerableStores != 1 {
 		t.Fatalf("%+v", r.Summary)
+	}
+	completed := map[string]bool{}
+	for _, p := range events {
+		if p.Phase == PhaseTargetCompleted {
+			completed[p.Target.ID] = true
+		}
+	}
+	if !completed["bad"] || !completed["good"] || events[len(events)-1].Phase != PhaseTargetsDiscovered || events[len(events)-1].Total != 2 {
+		t.Fatalf("container progress lost targets: %+v", events)
 	}
 	for _, target := range r.Targets {
 		if target.Target.ID == "good" && countStatus(target, report.VulnerableStore) != 0 {

@@ -4,6 +4,7 @@ package report
 import (
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 	"time"
 	"unicode"
@@ -136,6 +137,13 @@ func (r Report) ExitCode(strict bool) int {
 	return 0
 }
 func Terminal(w io.Writer, r Report, verbose bool) error {
+	return TerminalWithOptions(w, r, TerminalOptions{Verbose: verbose})
+}
+
+// TerminalWithOptions renders a human report. Color escapes are added only after
+// untrusted target names/paths are sanitized; JSON always uses the original data.
+func TerminalWithOptions(w io.Writer, r Report, options TerminalOptions) error {
+	verbose := options.Verbose
 	var b strings.Builder
 	fmt.Fprintf(&b, "CA Trust Audit\nIncident: %s\n", r.Incident)
 	for _, t := range r.Targets {
@@ -189,15 +197,85 @@ func Terminal(w io.Writer, r Report, verbose bool) error {
 	for _, s := range r.Warnings {
 		fmt.Fprintf(&b, "Warning: %s\n", s)
 	}
-	fmt.Fprintf(&b, "\nSUMMARY targets=%d hosts=%d containers=%d problem-clients=%d problem-stores=%d targets-with-incomplete-coverage=%d\n", r.Summary.Targets, r.Summary.Hosts, r.Summary.Containers, r.Summary.VulnerableClients, r.Summary.VulnerableStores, r.Summary.IncompleteTargets)
+	terminalSummary(&b, r)
 	fmt.Fprintln(&b, "Results describe the evaluated models and clients; they do not establish safety of all applications or code signing.")
-	_, err := io.WriteString(w, strings.Map(func(r rune) rune {
+	text := strings.Map(func(r rune) rune {
 		if r != '\n' && r != '\t' && unicode.IsControl(r) {
 			return '?'
 		}
 		return r
-	}, b.String()))
+	}, b.String())
+	if options.Color {
+		text = colorTerminal(text)
+	}
+	_, err := io.WriteString(w, text)
 	return err
+}
+
+func terminalSummary(w io.Writer, r Report) {
+	fmt.Fprintln(w, "\nSUMMARY")
+	fmt.Fprintf(w, "  Targets: %d (hosts=%d, containers=%d)\n", r.Summary.Targets, r.Summary.Hosts, r.Summary.Containers)
+	if r.Summary.VulnerableClients+r.Summary.VulnerableStores == 0 {
+		fmt.Fprintln(w, "  Confirmed problems: none detected.")
+	} else {
+		fmt.Fprintf(w, "  PROBLEM confirmed: clients=%d, CA files=%d\n", r.Summary.VulnerableClients, r.Summary.VulnerableStores)
+		for _, t := range r.Targets {
+			clients, stores := map[string]bool{}, map[string]bool{}
+			for _, f := range t.Findings {
+				if f.Status == VulnerableClient {
+					clients[f.Client] = true
+				}
+				if f.Status == VulnerableStore {
+					stores[f.Path] = true
+				}
+			}
+			if len(clients)+len(stores) == 0 {
+				continue
+			}
+			fmt.Fprintf(w, "  PROBLEM %s %s", t.Target.Kind, t.Target.Name)
+			if id := t.Target.ID; id != "" {
+				if len(id) > 12 {
+					id = id[:12]
+				}
+				fmt.Fprintf(w, " (%s)", id)
+			}
+			fmt.Fprintln(w)
+			if len(clients) > 0 {
+				fmt.Fprintf(w, "    Clients: %s\n", summaryList(clients))
+			}
+			if len(stores) > 0 {
+				fmt.Fprintf(w, "    CA files: %s\n", summaryList(stores))
+			}
+		}
+		fmt.Fprintln(w, "  Action: update the listed runtimes/CA bundles using vendor guidance, then rerun.")
+	}
+	if r.Summary.IncompleteTargets > 0 || len(r.Warnings) > 0 {
+		fmt.Fprintf(w, "  NOT VERIFIED incomplete coverage: targets=%d, scan warnings=%d\n", r.Summary.IncompleteTargets, len(r.Warnings))
+	}
+	reviewTargets := 0
+	for _, t := range r.Targets {
+		for _, f := range t.Findings {
+			if f.Status == Potential {
+				reviewTargets++
+				break
+			}
+		}
+	}
+	if reviewTargets > 0 {
+		fmt.Fprintf(w, "  REVIEW targets with potential findings: %d (effective trust needs review)\n", reviewTargets)
+	}
+}
+
+func summaryList(m map[string]bool) string {
+	keys := make([]string, 0, len(m))
+	for key := range m {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	if len(keys) > 3 {
+		return fmt.Sprintf("%s (+%d more; see target details)", strings.Join(keys[:3], ", "), len(keys)-3)
+	}
+	return strings.Join(keys, ", ")
 }
 
 // explainTarget gives an administrator the actionable conclusion before detail.

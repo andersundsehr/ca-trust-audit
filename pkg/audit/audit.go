@@ -28,6 +28,10 @@ import (
 // either is true, form an explicit target selection; both false defaults to both.
 // Online is retained for readable call sites; Offline overrides it.
 type Options struct {
+	// Progress receives serialized callbacks during Scan, including concurrent
+	// container scans. Keep callbacks short. Nil disables notifications.
+	// Separate concurrent Scan/ScanTarget calls need caller synchronization.
+	Progress          func(Progress)
 	CADirectories     []string // additional certificate-only directories
 	IncludeHost       bool
 	IncludeContainers bool
@@ -93,6 +97,10 @@ func Scan(ctx context.Context, o Options) (report.Report, error) {
 	if err := normalize(&o); err != nil {
 		return r, err
 	}
+	if callback := o.Progress; callback != nil {
+		var mu sync.Mutex
+		o.Progress = func(p Progress) { mu.Lock(); defer mu.Unlock(); callback(p) }
+	}
 	incident, err := DefaultIncident()
 	if o.Incident != nil {
 		incident = *o.Incident
@@ -123,6 +131,9 @@ func Scan(ctx context.Context, o Options) (report.Report, error) {
 		host = false
 		containers = true
 	}
+	if !containers {
+		notify(o, Progress{Phase: PhaseTargetsDiscovered, Total: 1})
+	}
 	if host {
 		env := map[string]string{}
 		for k := range docker.CAKeys {
@@ -133,6 +144,7 @@ func Scan(ctx context.Context, o Options) (report.Report, error) {
 		r.Targets = append(r.Targets, ScanTarget(ctx, report.Target{Kind: "host", Name: "local filesystem"}, HostFiles{}, probes.HostRunner{}, env, incident, o))
 	}
 	if containers {
+		notify(o, Progress{Phase: PhaseDockerDiscovery})
 		discovery, cancel := context.WithTimeout(ctx, o.Timeout)
 		client, e := docker.New(discovery)
 		if e != nil {
@@ -166,6 +178,7 @@ func Scan(ctx context.Context, o Options) (report.Report, error) {
 					}
 					list = matches
 				}
+				notify(o, Progress{Phase: PhaseTargetsDiscovered, Total: len(list) + len(r.Targets)})
 				results := make([]report.TargetReport, len(list))
 				jobs := make(chan int)
 				var wg sync.WaitGroup
@@ -183,6 +196,7 @@ func Scan(ctx context.Context, o Options) (report.Report, error) {
 							if len(c.Names) > 0 {
 								name = strings.TrimPrefix(c.Names[0], "/")
 							}
+							notify(o, Progress{Phase: PhaseContainerInspect, Target: report.Target{Kind: "container", Name: name, ID: c.ID, Image: c.Image}})
 							tc, cancel := context.WithTimeout(ctx, o.Timeout)
 							env, e := client.CAEnvironment(tc, c.ID)
 							cancel()
@@ -204,6 +218,7 @@ func Scan(ctx context.Context, o Options) (report.Report, error) {
 			}
 		}
 	}
+	notify(o, Progress{Phase: PhaseTargetsDiscovered, Total: len(r.Targets)})
 	r.Summarize()
 	if len(r.Targets) == 0 && len(r.Warnings) > 0 {
 		return r, errors.New("no selected targets could be scanned; " + strings.Join(r.Warnings, "; "))
@@ -217,6 +232,19 @@ func Scan(ctx context.Context, o Options) (report.Report, error) {
 // ScanTarget enables embedded, deterministic and custom-filesystem scans. Options
 // are normalized locally; invalid options produce an incomplete target report.
 func ScanTarget(ctx context.Context, target report.Target, files Files, runner probes.Runner, env map[string]string, incident certificates.Incident, o Options) report.TargetReport {
+	notify(o, Progress{Phase: PhaseTargetStarted, Target: target})
+	defer func() {
+		phase := PhaseTargetCompleted
+		if ctx.Err() != nil {
+			phase = PhaseTargetCanceled
+		}
+		notify(o, Progress{Phase: phase, Target: target})
+	}()
+	return scanTarget(ctx, target, files, runner, env, incident, o)
+}
+
+func scanTarget(ctx context.Context, target report.Target, files Files, runner probes.Runner, env map[string]string, incident certificates.Incident, o Options) report.TargetReport {
+	notify(o, Progress{Phase: PhaseConfiguration, Target: target})
 	t := report.TargetReport{Target: target, Findings: []report.Finding{}, Coverage: report.Coverage{Complete: true, Clients: []report.ClientCoverage{}, Limitations: []string{}}}
 	if err := normalize(&o); err != nil {
 		t.Coverage.Complete = false
@@ -329,7 +357,13 @@ func ScanTarget(ctx context.Context, target report.Target, files Files, runner p
 		paths = append(paths, ps...)
 	}
 	count := 0
-	for _, p := range unique(paths) {
+	selectedPaths := unique(paths)
+	totalPaths := len(selectedPaths)
+	if totalPaths > 2048 {
+		totalPaths = 2048
+	}
+	notify(o, Progress{Phase: PhaseStores, Target: target, Total: totalPaths})
+	for _, p := range selectedPaths {
 		if ctx.Err() != nil {
 			t.Coverage.Complete = false
 			break
@@ -343,6 +377,7 @@ func ScanTarget(ctx context.Context, target report.Target, files Files, runner p
 		c, cancel := context.WithTimeout(ctx, o.Timeout)
 		b, e := files.ReadFile(c, p)
 		cancel()
+		notify(o, Progress{Phase: PhaseStores, Target: target, Completed: count, Total: totalPaths})
 		if e != nil {
 			if !errors.Is(e, fs.ErrNotExist) || configured[p] || contains(o.CAPaths, p) {
 				t.Coverage.Complete = false
@@ -411,6 +446,7 @@ func ScanTarget(ctx context.Context, target report.Target, files Files, runner p
 		if runner == nil {
 			break
 		}
+		notify(o, Progress{Phase: PhaseClientDiscovery, Target: target, Client: client.Name()})
 		c, cancel := context.WithTimeout(ctx, o.Timeout)
 		found := client.Discover(c, runner)
 		cancel()
@@ -444,13 +480,19 @@ func ScanTarget(ctx context.Context, target report.Target, files Files, runner p
 			t.Coverage.Clients = append(t.Coverage.Clients, cv)
 			continue
 		}
+		notify(o, Progress{Phase: PhasePositiveControl, Target: target, Client: client.Name()})
 		c, cancel = context.WithTimeout(ctx, o.Timeout)
 		control := client.Check(c, runner, o.PositiveControl)
 		cancel()
 		if control.Status != report.VulnerableClient {
 			cv.Reason = "positive control failed: " + control.Category
 		}
-		for _, chain := range incident.Chains {
+		for chainIndex, chain := range incident.Chains {
+			if ctx.Err() != nil {
+				t.Coverage.Complete = false
+				break
+			}
+			notify(o, Progress{Phase: PhaseTLS, Target: target, Client: client.Name(), Completed: chainIndex, Total: len(incident.Chains)})
 			result := probes.Result{Status: report.Inconclusive, Category: "positive_control_failed"}
 			if control.Status == report.VulnerableClient {
 				c, cancel = context.WithTimeout(ctx, o.Timeout)
@@ -472,6 +514,7 @@ func ScanTarget(ctx context.Context, target report.Target, files Files, runner p
 				t.Coverage.Complete = false
 			}
 			t.Findings = append(t.Findings, f)
+			notify(o, Progress{Phase: PhaseTLS, Target: target, Client: client.Name(), Completed: chainIndex + 1, Total: len(incident.Chains)})
 		}
 		if cv.Tested == len(incident.Chains) {
 			testedClients++
