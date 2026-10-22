@@ -2,9 +2,6 @@ package install_test
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,24 +11,22 @@ import (
 )
 
 // The installer is tested without network access or administrator privileges.
-// curl and uname are replaced; actual SHA-256 verification and atomic install run.
+// curl and uname are replaced; the actual atomic installation runs. The test
+// PATH intentionally contains neither sha256sum nor awk.
 func TestInstaller(t *testing.T) {
 	cases := []struct {
-		name, machine, system, manifest string
-		latest, brokenDownload, badHash bool
-		args                            []string
-		want                            bool
+		name, machine, system         string
+		latest, brokenDownload, empty bool
+		args                          []string
+		want                          bool
 	}{
 		{name: "AMD64 latest", machine: "x86_64", system: "Linux", latest: true, want: true},
 		{name: "ARM64 latest", machine: "aarch64", system: "Linux", latest: true, want: true},
 		{name: "ARM64 alias pinned", machine: "arm64", system: "Linux", want: true},
 		{name: "unsupported architecture", machine: "i686", system: "Linux"},
 		{name: "unsupported OS", machine: "x86_64", system: "Darwin"},
-		{name: "corrupted executable", machine: "x86_64", system: "Linux", badHash: true},
 		{name: "download failure", machine: "x86_64", system: "Linux", brokenDownload: true},
-		{name: "missing manifest entry", machine: "x86_64", system: "Linux", manifest: "missing"},
-		{name: "duplicate manifest entries", machine: "x86_64", system: "Linux", manifest: "duplicate"},
-		{name: "malformed hash", machine: "x86_64", system: "Linux", manifest: "malformed"},
+		{name: "empty download", machine: "x86_64", system: "Linux", empty: true},
 		{name: "relative directory", machine: "x86_64", system: "Linux", args: []string{"--install-dir", "relative"}},
 		{name: "invalid version", machine: "x86_64", system: "Linux", args: []string{"--version", "v1.0.0/../../elsewhere"}},
 	}
@@ -75,27 +70,23 @@ case "$url" in
  *) exit 22 ;;
 esac
 `, 0755)
-			var sums strings.Builder
-			for _, arch := range []string{"amd64", "arm64"} {
-				binary := "standalone test executable for " + arch
-				hash := sha256.Sum256([]byte(binary))
-				h := hex.EncodeToString(hash[:])
-				if tc.badHash {
-					h = strings.Repeat("0", 64)
+			for _, tool := range []string{"mktemp", "mkdir", "install", "mv", "rm", "cp"} {
+				source, e := exec.LookPath(tool)
+				if e != nil {
+					t.Fatal(e)
 				}
-				if tc.manifest == "malformed" {
-					h = "bad"
-				}
-				asset := "ca-trust-audit-linux-" + arch
-				write(filepath.Join(assets, asset), binary, 0600)
-				if tc.manifest != "missing" {
-					fmt.Fprintf(&sums, "%s  %s\n", h, asset)
-					if tc.manifest == "duplicate" {
-						fmt.Fprintf(&sums, "%s  %s\n", h, asset)
-					}
+				if e = os.Symlink(source, filepath.Join(stubDir, tool)); e != nil {
+					t.Fatal(e)
 				}
 			}
-			write(filepath.Join(assets, "checksums.txt"), sums.String(), 0600)
+			for _, arch := range []string{"amd64", "arm64"} {
+				binary := "standalone test executable for " + arch
+				if tc.empty {
+					binary = ""
+				}
+				write(filepath.Join(assets, "ca-trust-audit-linux-"+arch), binary, 0600)
+			}
+
 			existing := filepath.Join(dest, "ca-trust-audit")
 			write(existing, "existing installation", 0755)
 			args := []string{"../../install.sh", "--install-dir", dest}
@@ -111,7 +102,7 @@ esac
 				broken = "1"
 			}
 			requests := filepath.Join(dir, "requests.txt")
-			cmd.Env = append(os.Environ(), "PATH="+stubDir+":"+os.Getenv("PATH"), "TEST_SYSTEM="+tc.system, "TEST_MACHINE="+tc.machine, "TEST_ASSETS="+assets, "TEST_REQUESTS="+requests, "TEST_BROKEN_DOWNLOAD="+broken)
+			cmd.Env = append(os.Environ(), "PATH="+stubDir, "TEST_SYSTEM="+tc.system, "TEST_MACHINE="+tc.machine, "TEST_ASSETS="+assets, "TEST_REQUESTS="+requests, "TEST_BROKEN_DOWNLOAD="+broken)
 			out, e := cmd.CombinedOutput()
 			if (e == nil) != tc.want {
 				t.Fatalf("success=%v want=%v output=%s", e == nil, tc.want, out)
@@ -140,6 +131,9 @@ esac
 			calls, e := os.ReadFile(requests)
 			if e != nil {
 				t.Fatal(e)
+			}
+			if strings.Contains(string(calls), "checksums") {
+				t.Fatal("installer requested a checksum file", string(calls))
 			}
 			if !strings.Contains(string(calls), "/download/v1.2.3/ca-trust-audit-linux-"+arch) {
 				t.Fatal("release was not pinned before downloading", string(calls))

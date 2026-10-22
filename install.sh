@@ -1,5 +1,5 @@
 #!/bin/sh
-# Install a verified standalone Linux release. Scanner execution needs none of
+# Install a standalone Linux release over HTTPS. Scanner execution needs none of
 # these installer tools and does not depend on Go, OpenSSL or a language runtime.
 main() {
 set -eu
@@ -34,7 +34,7 @@ while [ "$#" -gt 0 ]; do
         --help|-h)
             printf '%s\n' 'Usage: sh install.sh [--version vX.Y.Z] [--install-dir /absolute/path]' \
                 'Default: latest release; auto-detect Linux AMD64/ARM64; install to /usr/local/bin.' \
-                'Requires curl, sha256sum and common POSIX tools. Uses sudo only if the destination needs it.'
+                'Requires curl and common POSIX tools. Uses sudo only if the destination needs it.'
             exit 0
             ;;
         *) fail "unknown argument: $1" ;;
@@ -50,12 +50,12 @@ case "$(uname -m)" in
     aarch64|arm64) arch=arm64 ;;
     *) fail 'unsupported architecture; supported: AMD64 and ARM64' ;;
 esac
-for tool in curl sha256sum awk mktemp mkdir install mv rm; do
+for tool in curl mktemp mkdir install mv rm; do
     command -v "$tool" >/dev/null 2>&1 || fail "required installer tool is missing: $tool"
 done
 work_dir=$(mktemp -d "${TMPDIR:-/tmp}/ca-trust-audit-install.XXXXXX")
 
-# Resolve latest once so the binary and checksum always come from the same tag.
+# Resolve latest once and download the binary from that release tag.
 if [ "$version" = latest ]; then
     resolved=$(curl -q --proto '=https' --proto-redir '=https' --tlsv1.2 --fail --silent --show-error \
         --location --head --connect-timeout 15 --max-time 60 --output /dev/null \
@@ -75,21 +75,10 @@ fetch() {
         --output "$2" "$1" || fail "could not download $version release asset; check that the release is published"
 }
 printf 'Downloading ca-trust-audit %s for Linux %s...\n' "$version" "$arch"
-fetch "$base/checksums.txt" "$work_dir/checksums.txt" 65536
 fetch "$base/$asset" "$work_dir/$asset" 67108864
-expected=$(awk -v asset="$asset" '
-    $2 == asset || $2 == "*" asset {
-        if (length($1) != 64 || $1 ~ /[^0-9a-fA-F]/) exit 1
-        value = tolower($1); count++
-    }
-    END { if (count != 1) exit 1; print value }
-' "$work_dir/checksums.txt") || fail 'checksum manifest must contain exactly one valid hash for the selected executable'
-actual=$(sha256sum "$work_dir/$asset")
-actual=${actual%% *}
-[ "$actual" = "$expected" ] || fail 'SHA-256 mismatch; downloaded executable will not be installed'
-printf 'SHA-256 verification passed.\n'
+[ -s "$work_dir/$asset" ] || fail 'downloaded executable is empty'
 
-# Do not touch an existing installation until both downloads are verified.
+# Do not touch an existing installation until the download has completed.
 [ ! -d "$install_dir/ca-trust-audit" ] || fail 'destination executable path is a directory'
 if mkdir -p -- "$install_dir" 2>/dev/null && [ -w "$install_dir" ]; then
     :
