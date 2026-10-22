@@ -1,0 +1,65 @@
+name: Release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.3'
+          cache: false
+      - run: test -z "$(gofmt -l cmd pkg internal)"
+      - run: go vet ./...
+      - run: go test -count=1 -race ./...
+      - name: Validate tag and derive reproducible metadata
+        id: meta
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]
+          echo "version=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+      - name: Build and checksum
+        env:
+          RELEASE_TAG: ${{ steps.meta.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          build_date=$(git show -s --format=%cI HEAD)
+          for arch in amd64 arm64; do
+            CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -trimpath -buildvcs=false \
+              -ldflags="-s -w -buildid= -X main.version=$RELEASE_TAG -X main.commit=$GITHUB_SHA -X main.buildDate=$build_date" \
+              -o "dist/ca-trust-audit-linux-$arch" ./cmd/ca-trust-audit
+          done
+          cd dist
+          sha256sum ca-trust-audit-linux-* > checksums.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-files
+          path: dist/*
+          if-no-files-found: error
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-files
+          path: dist
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.build.outputs.version }}
+        run: gh release create "$RELEASE_TAG" dist/* --verify-tag --title "$RELEASE_TAG" --generate-notes
