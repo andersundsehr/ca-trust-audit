@@ -1,5 +1,33 @@
 # ca-trust-audit
 
+**Urgent trust audit: eMudhra intermediate CA compromise — CVE-2026-111943.**
+
+The [October 2026 eMudhra incident advisory](https://emudhra.we-have-a-problem.com/)
+reports compromised private keys for six TLS intermediate certificate authorities
+and two code-signing CAs, including affected cross-signed certificate chains.
+Systems that still accept an affected TLS chain may trust attacker-issued HTTPS
+certificates. An attacker able to intercept or redirect traffic could impersonate
+HTTPS services, steal credentials or session tokens, and read or alter sensitive
+traffic while certificate validation appears to succeed.
+
+**Audit and remediate promptly:** a compromised CA signing key can issue new
+certificates; renewing your own website certificate does not remove that trust.
+Apply vendor-recommended distrust and runtime updates, replace stale application
+CA bundles where required, and rebuild/redeploy affected container images. A host
+update does not replace CA bundles baked into existing containers. PHP/OpenSSL,
+curl, Python/certifi, Node.js and other clients can use different trust sources,
+so check each relevant runtime and container, then rescan after remediation.
+
+This tool identifies confirmed acceptance separately from potential findings and
+incomplete coverage. A passed TLS check covers the evaluated client or trust-store
+model; code-signing policy validation is reported separately as unsupported.
+
+**Keywords:** CVE-2026-111943, eMudhra, emSign, Sectigo cross-signing, compromised CA,
+intermediate CA, certificate authority compromise, TLS/SSL certificate validation,
+HTTPS impersonation, man-in-the-middle (MITM), certificate trust, CA bundle,
+trust store audit, Linux, Docker container security, PHP, OpenSSL, curl, Python,
+certifi, Node.js, code-signing CA compromise.
+
 A read-only Linux certificate-trust incident scanner: one Go executable, a reusable
 Go API, host and running-Docker-container coverage, and separate live-client and
 explicit trust-store evidence. Linux AMD64 and ARM64, including Linux under WSL.
@@ -150,8 +178,8 @@ explicitly overrides detection. JSON never contains presentation escape sequence
 
 Progress appears on **stderr** in interactive terminals. It shows targets
 processed, elapsed time, an approximate ETA, the active stage/client, and the
-target **at the end**. The target
-total becomes known after Docker discovery; this is a work counter, not a count
+target **at the end**. The total target count becomes known after Docker discovery;
+this is a work counter, not a count
 of passed security checks. A heartbeat updates elapsed time during slow requests.
 Interactive redraws are capped at four per second across all workers and phases;
 long labels are shortened to fit the terminal width without wrapping. Narrow

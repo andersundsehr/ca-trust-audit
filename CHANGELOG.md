@@ -2,6 +2,8 @@
 
 ## v0.2.1
 
+- Explain the incident, urgency, remediation and CVE-2026-111943 at the top of the
+  README, with relevant certificate-trust and runtime search keywords.
 - Default container workers to the available logical CPU count (`nproc` equivalent)
   in both the CLI and Go API; keep explicit positive `--workers` overrides.
 - Add `--host` as an alias for `--host-only`, with the same selection conflicts.
