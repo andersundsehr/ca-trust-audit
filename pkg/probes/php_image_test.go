@@ -29,7 +29,10 @@ func TestPHP85Image(t *testing.T) {
 	if os.Getenv("CA_TRUST_AUDIT_PHP_IMAGE_TESTS") != "1" {
 		t.Skip("set CA_TRUST_AUDIT_PHP_IMAGE_TESTS=1 after pulling webdevops/php-apache:8.5-alpine")
 	}
-	const image = "webdevops/php-apache:8.5-alpine"
+	image := os.Getenv("CA_TRUST_AUDIT_PHP_IMAGE")
+	if image == "" {
+		image = "webdevops/php-apache:8.5-alpine"
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 	if e := exec.CommandContext(ctx, "docker", "image", "inspect", image).Run(); e != nil {

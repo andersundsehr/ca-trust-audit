@@ -36,9 +36,15 @@ jobs:
           test "$scan_status" -eq 0 || test "$scan_status" -eq 1
           test -s report.json
   docker-integration:
-    name: Docker and PHP 8.5 integration
+    name: Docker and PHP ${{ matrix.php }} integration
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.5', '8.6']
+    env:
+      CA_TRUST_AUDIT_PHP_IMAGE: webdevops/php-apache:${{ matrix.php }}-alpine
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -52,7 +58,7 @@ jobs:
           CA_TRUST_AUDIT_DOCKER_TESTS: '1'
         run: go test -v -count=1 -timeout=3m ./pkg/audit -run '^TestRealDockerShellless$'
       - name: Pull representative PHP image
-        run: docker pull webdevops/php-apache:8.5-alpine
+        run: docker pull "$CA_TRUST_AUDIT_PHP_IMAGE"
       - name: PHP default CA bundle and positive/negative TLS probes
         env:
           CA_TRUST_AUDIT_PHP_IMAGE_TESTS: '1'

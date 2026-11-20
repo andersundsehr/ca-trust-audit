@@ -27,7 +27,10 @@ func TestPHP85CLI(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	const image = "webdevops/php-apache:8.5-alpine"
+	image := os.Getenv("CA_TRUST_AUDIT_PHP_IMAGE")
+	if image == "" {
+		image = "webdevops/php-apache:8.5-alpine"
+	}
 	if e := exec.CommandContext(ctx, "docker", "image", "inspect", image).Run(); e != nil {
 		t.Fatal("pull the PHP image before enabling this integration test")
 	}

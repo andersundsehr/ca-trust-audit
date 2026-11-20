@@ -166,7 +166,7 @@ JSON uses stable **schema 1.0** with precise statuses such as `VULNERABLE_CLIENT
 - Inside a container, its filesystem is the primary local target. For local-only operation, run `ca-trust-audit --host --offline`. Additional containers require an accessible Docker endpoint.
 - **A Docker socket is powerful access**, even through a read-only bind mount; use appropriate daemon/API authorization.
 
-**Tested PHP use case:** [`webdevops/php-apache:8.5-alpine`](docs/php85-test.md), with default-bundle checks against all 14 chains and trusted/untrusted PHP stream/cURL fixtures. Deployed overrides still need scanning as deployed.
+**Tested PHP use cases:** [`webdevops/php-apache:8.5-alpine`](docs/php85-test.md) and `webdevops/php-apache:8.6-alpine`, with default-bundle checks against all 14 chains and trusted/untrusted PHP stream/cURL fixtures. Deployed overrides still need scanning as deployed.
 
 ## Security and privacy
 

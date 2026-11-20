@@ -420,6 +420,8 @@ standard bundle against all fourteen actual incident chains, then tests PHP
 OpenSSL streams and PHP cURL with a locally generated trusted/untrusted chain.
 It uses an isolated read-only fixture container and read-only public CA mount.
 It does not change an existing container or trust store.
+`CA_TRUST_AUDIT_PHP_IMAGE` selects another image; CI also runs the tests with
+`webdevops/php-apache:8.6-alpine`.
 
 ```sh
 docker pull webdevops/php-apache:8.5-alpine

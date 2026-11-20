@@ -29,7 +29,10 @@ func TestPHP85ParallelChains(t *testing.T) {
 	if os.Getenv("CA_TRUST_AUDIT_PHP_IMAGE_TESTS") != "1" {
 		t.Skip("enable CA_TRUST_AUDIT_PHP_IMAGE_TESTS after pulling webdevops/php-apache:8.5-alpine")
 	}
-	const image = "webdevops/php-apache:8.5-alpine"
+	image := os.Getenv("CA_TRUST_AUDIT_PHP_IMAGE")
+	if image == "" {
+		image = "webdevops/php-apache:8.5-alpine"
+	}
 	const workers = 4
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
